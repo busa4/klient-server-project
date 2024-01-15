@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piirkonna Sisestamine ja Andmebaasi päring</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+</head>
+
+<body>
+
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-md-6 offset-md-3">
+                <h2 class="text-center">Piirkonna Sisestamine ja Andmebaasi päring</h2>
+                <div class="form-group">
+                    <label for="piirkonnaNimi">Sisesta piirkonna nimetus:</label>
+                    <input type="text" class="form-control" id="piirkonnaNimi" placeholder="Näiteks: Narva linn"
+                        list="regions">
+                    <datalist id="regions" class="custom-datalist"></datalist>
+                </div>
+                <button type="button" class="btn btn-primary" onclick="submitRegion(); clearLasrFields();">Saada</button>
+                
+                <div class="form-group">
+                    <label for="stopsText">Sisesta stop nimetus:</label>
+                    <input type="text" class="form-control" id="stopsText" placeholder="Näiteks: Kalda"
+                        list="stopsList">
+                    <datalist id="stopsList" class="custom-datalist"></datalist>
+                </div>
+                <button type="button" class="btn btn-primary" onclick="submitStop()">Saada</button>
+                <div id="result"></div>
+                <div id="sheduleresult"></div>
+                <button type="button" class="btn btn-secondary" onclick="clearFields()">Tühjenda väljad</button>
+
+            </div>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+
+    <script>
+        function clearFields() {
+            document.getElementById('piirkonnaNimi').value = '';
+            document.getElementById('stopsText').value = '';
+            document.getElementById('regions').innerHTML = '';
+            document.getElementById('stopsList').innerHTML = '';
+            document.getElementById('result').innerHTML = '';
+            document.getElementById('sheduleresult').innerHTML = '';
+        }
+        function clearLasrFields() {
+            document.getElementById('stopsText').value = '';
+            document.getElementById('regions').innerHTML = '';
+            document.getElementById('stopsList').innerHTML = '';
+            document.getElementById('result').innerHTML = '';
+            document.getElementById('sheduleresult').innerHTML = '';
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            requestRegions();
+            document.getElementById('piirkonnaNimi').addEventListener('input', function () {
+                requestRegions();
+            });
+        });
+
+        function requestRegions() {
+            var piirkonnaNimi = document.getElementById('piirkonnaNimi').value;
+            var datalist = document.getElementById('regions');
+
+            fetch("https://us-central1-busses-bd2b4.cloudfunctions.net/app/stop-areas")
+                .then(function (response) {
+                    return response.json();
+                })
+                .then(function (data) {
+                    datalist.innerHTML = "";
+                    data.forEach(function (item) {
+                        var option = document.createElement('option');
+                        option.value = item.stop_area;
+                        datalist.appendChild(option);
+                    });
+
+                })
+                .catch(function (error) {
+                    console.error('Ошибка:', error);
+                });
+        }
+
+        function submitRegion() {
+            var piirkonnaNimi = document.getElementById('piirkonnaNimi').value;
+            var datalist1 = document.getElementById('stopsList');
+
+            fetch("https://us-central1-busses-bd2b4.cloudfunctions.net/app/stops?piirkonnaNimi=" + encodeURIComponent(piirkonnaNimi))
+                .then(function (response) {
+                    return response.json();
+                })
+                .then(function (data) {
+                    datalist1.innerHTML = "";
+                    data.forEach(function (item) {
+                        var option = document.createElement('option');
+                        option.value = item.stop_name;
+                        datalist1.appendChild(option);
+                    });
+
+                })
+                .catch(function (error) {
+                    console.error('Ошибка:', error);
+                });
+        }
+        function sheduleRequest(busNumber) {
+            var stopName = document.getElementById('stopsText').value;
+            var stopCity = document.getElementById('piirkonnaNimi').value;
+
+            fetch("https://us-central1-busses-bd2b4.cloudfunctions.net/app/shedulequery?busNumber=" + encodeURIComponent(busNumber) + "&stopName=" + encodeURIComponent(stopName) + "&stopCity=" + encodeURIComponent(stopCity))
+                .then(function (response) {
+                    return response.json();
+                })
+                .then(function (data) {
+                    var sheduleresultDiv = document.getElementById('sheduleresult');
+                    var currentTime = moment();
+                    var closestDepartures = [];
+                    data.forEach(function (departureTime) {
+                        var departureMoment = moment(departureTime, 'HH:mm:ss');
+                        var timeDifference = departureMoment.diff(currentTime, 'minutes');
+                        if (timeDifference > 0) {
+                            closestDepartures.push({
+                                time: departureTime,
+                                difference: timeDifference
+                            });
+                        }
+                    });
+                    closestDepartures.sort(function (a, b) {
+                        return a.difference - b.difference;
+                    });
+                    var slicedDepartures = closestDepartures.slice(0, 5);
+                    var resultString = "";
+                    for (var i = 0; i < slicedDepartures.length; i++) {
+                        var departure = slicedDepartures[i];
+                        var formattedTime = moment(departure.time, 'HH:mm:ss').format('HH:mm');
+
+                        var minutesLabel = (departure.difference === 1) ? 'минуту' : 'минут';
+                        resultString += formattedTime + ' (через ' + departure.difference + ' ' + minutesLabel + ')';
+                        resultString += (i < slicedDepartures.length - 1) ? '<br>' : '';
+                    }
+                    sheduleresultDiv.innerHTML = "<p>Ближайшие рейсы:<br>" + resultString + "</p>";
+                })
+                .catch(function (error) {
+                    console.error('Ошибка:', error);
+                });
+        }
+
+
+
+
+        function submitStop() {
+            var stopName = document.getElementById('stopsText').value;
+            var stopCity = document.getElementById('piirkonnaNimi').value;
+
+            fetch("https://us-central1-busses-bd2b4.cloudfunctions.net/app/stops-query?stopName=" + encodeURIComponent(stopName) + "&stopCity=" + encodeURIComponent(stopCity))
+                .then(function (response) {
+                    return response.json();
+                })
+                .then(function (data) {
+                    data.sort(function (a, b) {
+                        var numA = parseInt(a);
+                        var numB = parseInt(b);
+                        if (isNaN(numA) || isNaN(numB)) {
+                            return a.localeCompare(b);
+                        }
+                        return numA - numB;
+                    });
+                    var resultDiv = document.getElementById('result');
+                    resultDiv.innerHTML = "";
+                    data.forEach(function (item) {
+                        var button = document.createElement('button');
+                        button.textContent = item;
+                        button.classList.add("btn", "btn-primary", "mr-2", "mb-2");
+                        button.addEventListener('click', function () {
+                            sheduleRequest(item);
+                        });
+                        resultDiv.appendChild(button);
+                    });
+                })
+                .catch(function (error) {
+                    console.error('Ошибка:', error);
+                });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            requestRegions();
+            document.getElementById('piirkonnaNimi').addEventListener('input', function () {
+                requestRegions();
+            });
+        });
+    </script>
+
+</body>
+
+</html>
